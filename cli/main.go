@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"github.com/urfave/cli/v3"
+	"github.com/zyklone4096/stellaris-patch/patcher"
 )
 
 func main() {
@@ -43,6 +45,28 @@ func main() {
 				Category:    "workspace",
 				Description: "Initialize new stellaris-patch mod workspace in current directory",
 			},
+			{
+				Name:        "deploy",
+				Action:      deploy,
+				Category:    "workspace",
+				Description: "Generate and deploy mod",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "target",
+						Value: "",
+					},
+					&cli.StringFlag{
+						Name:  "name",
+						Value: "stellaris_patch",
+						Usage: "Target mod name",
+					},
+					&cli.BoolFlag{
+						Name:  "purge",
+						Value: false,
+						Usage: "Purge existing mod only (won't deploy)",
+					},
+				},
+			},
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -54,4 +78,34 @@ func main() {
 	}).Run(context.Background(), os.Args); err != nil {
 		panic(err)
 	}
+}
+
+type current struct {
+	workspace string
+	game      string
+}
+
+func getCurrent(cmd *cli.Command) (current, error) {
+	result := current{}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return result, err
+	}
+
+	base := cmd.String("base")
+	if base == "" {
+		base = os.Getenv("STELLARIS_HOME")
+	}
+	if _, err := os.Stat(base); os.IsNotExist(err) {
+		return result, errors.New("base game not found")
+	}
+
+	result.workspace = wd
+	result.game = base
+	return result, nil
+}
+
+func (c current) NewPatcher() (*patcher.Patcher, error) {
+	return patcher.NewPatcher(c.workspace, c.game)
 }

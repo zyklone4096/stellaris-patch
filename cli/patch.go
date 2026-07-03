@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/zyklone4096/stellaris-patch/patcher"
-
 	"github.com/urfave/cli/v3"
 )
 
 func applyPatch(_ context.Context, cmd *cli.Command) error {
-	wd, err := os.Getwd()
+	c, err := getCurrent(cmd)
 	if err != nil {
 		return err
 	}
@@ -26,7 +24,7 @@ func applyPatch(_ context.Context, cmd *cli.Command) error {
 		return errors.New("base game not found")
 	}
 
-	if p, err := patcher.NewPatcher(wd, base); err == nil {
+	if p, err := c.NewPatcher(); err == nil {
 		targets := cmd.StringArgs("files")
 		all := len(targets)
 		if all == 0 {
@@ -51,7 +49,7 @@ func applyPatch(_ context.Context, cmd *cli.Command) error {
 }
 
 func rebuildPatch(_ context.Context, cmd *cli.Command) error {
-	wd, err := os.Getwd()
+	c, err := getCurrent(cmd)
 	if err != nil {
 		return err
 	}
@@ -64,7 +62,7 @@ func rebuildPatch(_ context.Context, cmd *cli.Command) error {
 		return errors.New("base game not found")
 	}
 
-	if p, err := patcher.NewPatcher(wd, base); err == nil {
+	if p, err := c.NewPatcher(); err == nil {
 		targets := cmd.StringArgs("files")
 		all := len(targets)
 		if all == 0 {
