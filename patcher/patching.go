@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 type Patcher struct {
@@ -14,6 +16,7 @@ type Patcher struct {
 	patches  string
 	sources  string
 	checker  FileChangeChecker
+	dmp      diffmatchpatch.DiffMatchPatch
 }
 
 func NewPatcher(repo string, vanilla string) (*Patcher, error) {
@@ -33,6 +36,7 @@ func NewPatcher(repo string, vanilla string) (*Patcher, error) {
 			sources,
 			filepath.Join(abs, "metadata"),
 		),
+		dmp: *diffmatchpatch.New(),
 	}, nil
 }
 
@@ -71,7 +75,7 @@ func (p *Patcher) Apply(file string) error {
 	}
 
 	// apply with git
-	return gitApplyPatch(vanilla, patch, p.sourceFile(file))
+	return p.applyPatch(vanilla, patch, p.sourceFile(file))
 }
 
 func (p *Patcher) ApplyAll() error {
@@ -133,20 +137,7 @@ func (p *Patcher) Generate(file string) error {
 	}
 
 	patch := p.patchFile(file)
-	if err := os.MkdirAll(filepath.Dir(patch), 0755); err != nil {
-		return err
-	}
-	if stat, err := os.Stat(patch); err == nil { // remove old
-		if stat.IsDir() {
-			if err = os.RemoveAll(patch); err != nil {
-				return err
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	if err := gitGeneratePatch(vanilla, src, patch); err != nil {
+	if err := p.generatePatch(vanilla, src, patch); err != nil {
 		return err
 	}
 
@@ -161,7 +152,7 @@ func (p *Patcher) RegenerateChanged() error {
 
 	all := len(changes)
 	for idx, file := range changes {
-		fmt.Printf("Regenerating %s (%d/%d)\n", file, idx, all)
+		fmt.Printf("Regenerating %s (%d/%d)\n", file, idx+1, all)
 		if err = p.Generate(file); err != nil { // generate patch
 			fmt.Println("Error regenerating patch for", file)
 			return err

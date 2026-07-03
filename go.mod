@@ -2,11 +2,11 @@ module github.com/zyklone4096/stellaris-patch
 
 go 1.26
 
-require (
-	github.com/urfave/cli/v3 v3.10.1
-)
+require github.com/urfave/cli/v3 v3.10.1
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
+	github.com/epiclabs-io/diff3 v0.0.0-20260520111523-3b1669897fb1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/sergi/go-diff v1.4.0 // indirect
 )
