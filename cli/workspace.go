@@ -18,9 +18,9 @@ func initWorkspace(_ context.Context, cmd *cli.Command) error {
 	}
 	wd := c.workspace
 
-	if err = os.WriteFile(filepath.Join(wd, ".gitignore"), []byte(`
-src
+	if err = os.WriteFile(filepath.Join(wd, ".gitignore"), []byte(`src
 metadata
+backup
 `), 0644); err != nil {
 		return err
 	}

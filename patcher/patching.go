@@ -15,6 +15,7 @@ type Patcher struct {
 	repoRoot string
 	patches  string
 	sources  string
+	backups  string
 	checker  FileChangeChecker
 	dmp      diffmatchpatch.DiffMatchPatch
 }
@@ -32,6 +33,7 @@ func NewPatcher(repo string, vanilla string) (*Patcher, error) {
 		repoRoot: abs,
 		sources:  sources,
 		patches:  filepath.Join(abs, "patches"),
+		backups:  filepath.Join(abs, "backups"),
 		checker: *NewChangeChecker(
 			sources,
 			filepath.Join(abs, "metadata"),
@@ -48,12 +50,28 @@ func (p *Patcher) sourceFile(file string) string {
 	return filepath.Join(p.sources, file)
 }
 
+func (p *Patcher) makeBackup(file string) (string, error) {
+	bk := filepath.Join(p.backups, file)
+
+	if stat, err := os.Stat(bk); err == nil {
+		if !stat.IsDir() {
+			return bk, nil
+		}
+	}
+
+	src := p.vanillaFile(file)
+	return bk, copyFile(src, bk)
+}
+
 func (p *Patcher) vanillaFile(file string) string {
 	return filepath.Join(p.vanilla, file)
 }
 
 func (p *Patcher) Apply(file string) error {
-	vanilla := p.vanillaFile(file)
+	vanilla, err := p.makeBackup(file)
+	if err != nil {
+		return fmt.Errorf("failed to create backup for %s: %v", file, err)
+	}
 	patch := p.patchFile(file)
 
 	if stat, err := os.Stat(vanilla); err != nil {
@@ -126,7 +144,10 @@ func (p *Patcher) Generate(file string) error {
 		return errors.New("cannot generate patch for directory")
 	}
 
-	vanilla := p.vanillaFile(file)
+	vanilla, err := p.makeBackup(file)
+	if err != nil {
+		return fmt.Errorf("failed to create backup for %s: %v", file, err)
+	}
 	if stat, err := os.Stat(vanilla); err != nil {
 		if os.IsNotExist(err) {
 			return errors.New("vanilla file not found")

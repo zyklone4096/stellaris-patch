@@ -48,6 +48,8 @@ func (p *Patcher) generatePatch(original string, modified string, dest string) e
 }
 
 func (p *Patcher) applyPatch(original string, patch string, dest string) error {
+	_ = os.MkdirAll(filepath.Dir(dest), 0755)
+
 	cmd := exec.Command("patch", original, patch, "-o", dest)
 	if err := cmd.Run(); err == nil {
 		return nil
