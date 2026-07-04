@@ -67,6 +67,24 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:        "install",
+				Action:      hardInstall,
+				Category:    "workspace",
+				Description: "Install files to game directory, this should not be used unless your mod requires",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "purge",
+						Value: false,
+						Usage: "Recover original game files (won't install), recommended before base game update",
+					},
+					&cli.BoolFlag{
+						Name:  "force",
+						Value: false,
+						Usage: "Force mode for purge, won't check",
+					},
+				},
+			},
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
