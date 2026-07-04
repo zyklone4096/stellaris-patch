@@ -16,6 +16,7 @@ type Patcher struct {
 	patches  string
 	sources  string
 	backups  string
+	extras   string
 	checker  FileChangeChecker
 	dmp      diffmatchpatch.DiffMatchPatch
 }
@@ -34,6 +35,7 @@ func NewPatcher(repo string, vanilla string) (*Patcher, error) {
 		sources:  sources,
 		patches:  filepath.Join(abs, "patches"),
 		backups:  filepath.Join(abs, "backups"),
+		extras:   filepath.Join(abs, "extras"),
 		checker: *NewChangeChecker(
 			sources,
 			filepath.Join(abs, "metadata"),
@@ -50,6 +52,10 @@ func (p *Patcher) sourceFile(file string) string {
 	return filepath.Join(p.sources, file)
 }
 
+func (p *Patcher) extraFile(file string) string {
+	return filepath.Join(p.extras, file)
+}
+
 func (p *Patcher) makeBackup(file string) (string, error) {
 	bk := filepath.Join(p.backups, file)
 
@@ -60,6 +66,16 @@ func (p *Patcher) makeBackup(file string) (string, error) {
 	}
 
 	src := p.vanillaFile(file)
+	if stat, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+	} else {
+		if stat.IsDir() {
+			return "", errors.New("base file is directory")
+		}
+	}
+
 	return bk, copyFile(src, bk)
 }
 
@@ -72,6 +88,10 @@ func (p *Patcher) Apply(file string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create backup for %s: %v", file, err)
 	}
+	if vanilla == "" { // added file, copy from extras
+		return copyFile(p.extraFile(file), p.sourceFile(file))
+	}
+
 	patch := p.patchFile(file)
 
 	if stat, err := os.Stat(vanilla); err != nil {
@@ -99,7 +119,7 @@ func (p *Patcher) Apply(file string) error {
 func (p *Patcher) ApplyAll() error {
 	metadata := filepath.Join(p.repoRoot, "metadata")
 
-	return filepath.WalkDir(p.patches, func(path string, d fs.DirEntry, wErr error) error {
+	if err := filepath.WalkDir(p.patches, func(path string, d fs.DirEntry, wErr error) error {
 		if wErr != nil {
 			return wErr
 		}
@@ -118,7 +138,7 @@ func (p *Patcher) ApplyAll() error {
 			return err
 		} else {
 			rel = rel[:len(rel)-6]
-			fmt.Println("Applying " + rel)
+			fmt.Printf("Applying %s\n", rel)
 
 			if err = p.Apply(rel); err != nil {
 				return err
@@ -126,7 +146,43 @@ func (p *Patcher) ApplyAll() error {
 		}
 
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	// copy added files
+	if err := filepath.WalkDir(p.extras, func(path string, d fs.DirEntry, wErr error) error {
+		if wErr != nil {
+			return wErr
+		}
+		if d != nil && d.IsDir() {
+			if cDir, err := filepath.Abs(path); err == nil {
+				if cDir == metadata {
+					return filepath.SkipDir
+				}
+			} else {
+				return err
+			}
+			return nil
+		}
+
+		if rel, err := filepath.Rel(p.extras, path); err != nil {
+			return err
+		} else {
+			if _, err := os.Stat(p.vanillaFile(rel)); os.IsNotExist(err) { // no conflicting file, continue
+				fmt.Printf("Copying added %s\n", rel)
+				return copyFile(filepath.Join(p.extras, rel), p.sourceFile(rel))
+			}
+
+			fmt.Printf("Conflicting file detected on added file %s, skipping\n", rel)
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *Patcher) SaveStates() error {
@@ -147,6 +203,9 @@ func (p *Patcher) Generate(file string) error {
 	vanilla, err := p.makeBackup(file)
 	if err != nil {
 		return fmt.Errorf("failed to create backup for %s: %v", file, err)
+	}
+	if vanilla == "" { // added file, copy to extras
+		return copyFile(src, p.extraFile(file))
 	}
 	if stat, err := os.Stat(vanilla); err != nil {
 		if os.IsNotExist(err) {
