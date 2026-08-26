@@ -31,22 +31,36 @@ func (p *Patcher) HardInstall() error {
 	}
 
 	return filepath.WalkDir(p.sources, func(path string, d fs.DirEntry, wErr error) error {
-		if !d.IsDir() {
-			if wErr != nil {
-				return wErr
-			}
-
-			if rel, err := filepath.Rel(p.sources, path); err != nil {
-				// make backup
-				if _, err = p.makeBackup(rel); err != nil {
-					return fmt.Errorf("failed to make backup for %s: %v", rel, err)
-				}
-
-				// copy file
-				return copyFile(path, p.vanillaFile(rel))
-			}
+		if wErr != nil {
+			return wErr
 		}
-		return nil
+		if d.IsDir() {
+			if rel, err := filepath.Rel(p.sources, path); err == nil {
+				if p.ignored(rel, true) {
+					return filepath.SkipDir
+				}
+			} else {
+				return err
+			}
+			return nil
+		}
+
+		if rel, err := filepath.Rel(p.sources, path); err != nil {
+			return err
+		} else {
+			if p.ignored(rel, false) {
+				fmt.Printf("Skipping ignored %s\n", rel)
+				return nil
+			}
+
+			// make backup
+			if _, err = p.makeBackup(rel); err != nil {
+				return fmt.Errorf("failed to make backup for %s: %v", rel, err)
+			}
+
+			// copy file
+			return copyFile(path, p.vanillaFile(rel))
+		}
 	})
 }
 
@@ -57,23 +71,41 @@ func (p *Patcher) HardPurge(force bool) error {
 
 	errored := false
 	if err := filepath.WalkDir(p.sources, func(path string, d fs.DirEntry, wErr error) error {
-		if !d.IsDir() {
-			if rel, err := filepath.Rel(p.sources, path); err != nil {
-				if _, err := os.Stat(p.extraFile(rel)); os.IsNotExist(err) {
-					// file exists in base game, copy from backup
-					if err = copyFile(filepath.Join(p.backups, rel), path); err != nil {
-						fmt.Printf("Failed to recover file %s from backup: %v\n", rel, err)
-						errored = true
-					}
-				} else {
-					// file not exists in base game, delete
-					if err = os.Remove(path); err != nil {
-						fmt.Printf("Failed to delete file %s: %v", rel, err)
-						errored = true
-					}
+		if wErr != nil {
+			return wErr
+		}
+		if d.IsDir() {
+			if rel, err := filepath.Rel(p.sources, path); err == nil {
+				if p.ignored(rel, true) {
+					return filepath.SkipDir
 				}
 			} else {
-				fmt.Printf("Failed to get relative path of %s: %v\n", path, err)
+				return err
+			}
+			return nil
+		}
+
+		rel, err := filepath.Rel(p.sources, path)
+		if err != nil {
+			fmt.Printf("Failed to get relative path of %s: %v\n", path, err)
+			errored = true
+			return nil
+		}
+		if p.ignored(rel, false) {
+			fmt.Printf("Skipping ignored %s\n", rel)
+			return nil
+		}
+
+		if _, err := os.Stat(p.extraFile(rel)); os.IsNotExist(err) {
+			// file exists in base game, copy from backup
+			if err = copyFile(filepath.Join(p.backups, rel), path); err != nil {
+				fmt.Printf("Failed to recover file %s from backup: %v\n", rel, err)
+				errored = true
+			}
+		} else {
+			// file not exists in base game, delete
+			if err = os.Remove(path); err != nil {
+				fmt.Printf("Failed to delete file %s: %v", rel, err)
 				errored = true
 			}
 		}

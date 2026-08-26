@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
@@ -19,6 +20,7 @@ type Patcher struct {
 	extras   string
 	checker  FileChangeChecker
 	dmp      diffmatchpatch.DiffMatchPatch
+	ign      *Ignore
 }
 
 func NewPatcher(repo string, vanilla string) (*Patcher, error) {
@@ -28,6 +30,15 @@ func NewPatcher(repo string, vanilla string) (*Patcher, error) {
 	}
 
 	sources := filepath.Join(abs, "src")
+
+	ignore, err := os.OpenFile(filepath.Join(abs, ".spignore"), os.O_RDONLY, 0644)
+	var ign *Ignore
+	if err == nil {
+		defer ignore.Close()
+		ign = LoadIgnoreRules(ignore)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
 
 	return &Patcher{
 		vanilla:  vanilla,
@@ -41,6 +52,7 @@ func NewPatcher(repo string, vanilla string) (*Patcher, error) {
 			filepath.Join(abs, "metadata"),
 		),
 		dmp: *diffmatchpatch.New(),
+		ign: ign,
 	}, nil
 }
 
@@ -81,6 +93,13 @@ func (p *Patcher) makeBackup(file string) (string, error) {
 
 func (p *Patcher) vanillaFile(file string) string {
 	return filepath.Join(p.vanilla, file)
+}
+
+func (p *Patcher) ignored(rel string, dir bool) bool {
+	if p.ign == nil {
+		return false
+	}
+	return p.ign.Match(dir, strings.Split(filepath.ToSlash(rel), "/")...)
 }
 
 func (p *Patcher) Apply(file string) error {
@@ -131,6 +150,13 @@ func (p *Patcher) ApplyAll() error {
 			} else {
 				return err
 			}
+			if rel, err := filepath.Rel(p.patches, path); err == nil {
+				if p.ignored(rel, true) {
+					return filepath.SkipDir
+				}
+			} else {
+				return err
+			}
 			return nil
 		}
 
@@ -138,6 +164,11 @@ func (p *Patcher) ApplyAll() error {
 			return err
 		} else {
 			rel = rel[:len(rel)-6]
+			if p.ignored(rel, false) {
+				fmt.Printf("Skipping ignored %s\n", rel)
+				return nil
+			}
+
 			fmt.Printf("Applying %s\n", rel)
 
 			if err = p.Apply(rel); err != nil {
@@ -163,12 +194,24 @@ func (p *Patcher) ApplyAll() error {
 			} else {
 				return err
 			}
+			if rel, err := filepath.Rel(p.extras, path); err == nil {
+				if p.ignored(rel, true) {
+					return filepath.SkipDir
+				}
+			} else {
+				return err
+			}
 			return nil
 		}
 
 		if rel, err := filepath.Rel(p.extras, path); err != nil {
 			return err
 		} else {
+			if p.ignored(rel, false) {
+				fmt.Printf("Skipping ignored %s\n", rel)
+				return nil
+			}
+
 			if _, err := os.Stat(p.vanillaFile(rel)); os.IsNotExist(err) { // no conflicting file, continue
 				fmt.Printf("Copying added %s\n", rel)
 				return copyFile(filepath.Join(p.extras, rel), p.sourceFile(rel))
@@ -229,6 +272,16 @@ func (p *Patcher) RegenerateChanged() error {
 	if err != nil {
 		return err
 	}
+
+	filtered := changes[:0]
+	for _, file := range changes {
+		if p.ignored(file, false) {
+			fmt.Printf("Skipping ignored %s\n", file)
+			continue
+		}
+		filtered = append(filtered, file)
+	}
+	changes = filtered
 
 	all := len(changes)
 	for idx, file := range changes {

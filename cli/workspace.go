@@ -24,6 +24,10 @@ backup
 `), 0644); err != nil {
 		return err
 	}
+	if err = os.WriteFile(filepath.Join(wd, ".spignore"), []byte(`.idea
+.vscode`), 0644); err != nil {
+		return err
+	}
 
 	if err = os.Mkdir(filepath.Join(wd, "src"), 0755); err != nil {
 		return err
